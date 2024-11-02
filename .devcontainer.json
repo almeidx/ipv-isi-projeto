@@ -1,0 +1,9 @@
+{
+	"image": "mcr.microsoft.com/devcontainers/python",
+	"features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  }
+}

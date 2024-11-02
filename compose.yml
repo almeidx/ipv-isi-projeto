@@ -1,0 +1,48 @@
+x-rabbitmq-dependent: &rabbitmq-dependent
+  environment:
+    RABBITMQ_USER: user
+    RABBITMQ_PASS: password
+    PYTHONUNBUFFERED: 1
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+
+services:
+  sensor:
+    <<: *rabbitmq-dependent
+    container_name: sensor
+    build:
+      context: sensor
+      dockerfile: Dockerfile
+
+  receiver:
+    <<: *rabbitmq-dependent
+    container_name: receiver
+    build:
+      context: receiver
+      dockerfile: Dockerfile
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - rabbitmq-log:/var/log/rabbitmq
+      - rabbitmq-conf:/etc/rabbitmq
+    healthcheck:
+      test: "rabbitmqctl node_health_check"
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  rabbitmq-data:
+  rabbitmq-log:
+  rabbitmq-conf:
