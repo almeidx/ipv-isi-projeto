@@ -1,7 +1,14 @@
-FROM python
+FROM python AS deps
 
-RUN pip install pika
+ARG SENSOR_TYPE
 
-COPY sensor.py .
+RUN test -n "$SENSOR_TYPE"
+
+ENV SENSOR_TYPE=$SENSOR_TYPE
+
+WORKDIR /app
+
+COPY requirements.txt sensor.py ./
+RUN pip install -r requirements.txt
 
 CMD [ "python3", "sensor.py" ]

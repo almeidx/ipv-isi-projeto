@@ -1,5 +1,6 @@
 x-rabbitmq-dependent: &rabbitmq-dependent
   environment:
+    RABBITMQ_HOST: rabbitmq
     RABBITMQ_USER: user
     RABBITMQ_PASS: password
     PYTHONUNBUFFERED: 1
@@ -8,12 +9,38 @@ x-rabbitmq-dependent: &rabbitmq-dependent
       condition: service_healthy
 
 services:
-  sensor:
+  sensor_temperature:
     <<: *rabbitmq-dependent
-    container_name: sensor
+    container_name: sensor_temperature
     build:
       context: sensor
       dockerfile: Dockerfile
+      args:
+        SENSOR_TYPE: temperature
+    depends_on:
+      - receiver
+
+  sensor_gas_concentration:
+    <<: *rabbitmq-dependent
+    container_name: sensor_gas_concentration
+    build:
+      context: sensor
+      dockerfile: Dockerfile
+      args:
+        SENSOR_TYPE: gas_concentration
+    depends_on:
+      - receiver
+
+  sensor_humidity:
+    <<: *rabbitmq-dependent
+    container_name: sensor_humidity
+    build:
+      context: sensor
+      dockerfile: Dockerfile
+      args:
+        SENSOR_TYPE: humidity
+    depends_on:
+      - receiver
 
   receiver:
     <<: *rabbitmq-dependent
@@ -21,6 +48,8 @@ services:
     build:
       context: receiver
       dockerfile: Dockerfile
+    volumes:
+      - ./receiver/db.sqlite3:/app/db.sqlite3
 
   rabbitmq:
     image: rabbitmq:4-management
