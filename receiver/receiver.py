@@ -2,31 +2,45 @@ import os
 import json
 from datetime import datetime
 import pika
-import sqlite3
-from pathlib import Path
+import psycopg2
+from psycopg2 import pool
+from contextlib import contextmanager
 
 QUEUE_NAME = 'sensor_data'
-DB_FILE_PATH = '/app/db.sqlite3'
 TABLE_NAME = 'sensor_data'
 
-db_file = Path(DB_FILE_PATH)
+connection_pool = psycopg2.pool.SimpleConnectionPool(
+    1, 20,
+    host=os.getenv('POSTGRES_HOST'),
+    database=os.getenv('POSTGRES_DB'),
+    user=os.getenv('POSTGRES_USER'),
+    password=os.getenv('POSTGRES_PASS')
+)
 
-if not db_file.exists():
-    db_file.touch()
+
+@contextmanager
+def get_db_connection():
+    """Context manager for database connections."""
+    conn = connection_pool.getconn()
+    try:
+        yield conn
+    finally:
+        connection_pool.putconn(conn)
 
 
 def init_db():
-    with sqlite3.connect(db_file) as conn:
-        cursor = conn.cursor()
-        cursor.execute(f'''
-        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            sensor_type TEXT,
-            value REAL
-        )
-        ''')
-        conn.commit()
+    """Initialize the database table if it doesn't exist."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(f'''
+                CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    sensor_type TEXT,
+                    value REAL
+                )
+            ''')
+            conn.commit()
 
 
 def callback(ch, method, properties, body):
@@ -37,13 +51,13 @@ def callback(ch, method, properties, body):
         value = data['value']
         timestamp = datetime.now().isoformat()
 
-        with sqlite3.connect(db_file) as conn:
-            cursor = conn.cursor()
-            cursor.execute(f'''
-            INSERT INTO {TABLE_NAME} (timestamp, sensor_type, value)
-            VALUES (?, ?, ?)
-            ''', (timestamp, sensor_type, value))
-            conn.commit()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(f'''
+                    INSERT INTO {TABLE_NAME} (timestamp, sensor_type, value)
+                    VALUES (%s, %s, %s)
+                ''', (timestamp, sensor_type, value))
+                conn.commit()
 
         print(f"Recorded data: {timestamp}, {sensor_type}, {value}")
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -79,7 +93,7 @@ def main():
         on_message_callback=callback
     )
 
-    print(f"Starting consumer. Saving data to {db_file}")
+    print(f"Starting consumer. Saving data to PostgreSQL")
 
     try:
         channel.start_consuming()
@@ -88,6 +102,7 @@ def main():
         channel.stop_consuming()
     finally:
         connection.close()
+        connection_pool.closeall()
 
 
 if __name__ == "__main__":

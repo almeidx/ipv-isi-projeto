@@ -1,62 +1,85 @@
-x-rabbitmq-dependent: &rabbitmq-dependent
-  environment:
-    RABBITMQ_HOST: rabbitmq
-    RABBITMQ_USER: user
-    RABBITMQ_PASS: password
-    PYTHONUNBUFFERED: 1
-  depends_on:
-    rabbitmq:
-      condition: service_healthy
+x-rabbitmq-env: &rabbitmq-env
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_USER: user
+  RABBITMQ_PASS: password
+  PYTHONUNBUFFERED: 1
+
+x-postgres-env: &postgres-env
+  POSTGRES_HOST: postgres
+  POSTGRES_USER: user
+  POSTGRES_PASS: password
+  POSTGRES_DB: db
+  PYTHONUNBUFFERED: 1
 
 services:
   sensor_temperature:
-    <<: *rabbitmq-dependent
     container_name: sensor_temperature
     build:
       context: sensor
       dockerfile: Dockerfile
       args:
         SENSOR_TYPE: temperature
+    environment:
+      <<: *rabbitmq-env
     depends_on:
       - receiver
 
   sensor_gas_concentration:
-    <<: *rabbitmq-dependent
     container_name: sensor_gas_concentration
     build:
       context: sensor
       dockerfile: Dockerfile
       args:
         SENSOR_TYPE: gas_concentration
+    environment:
+      <<: *rabbitmq-env
     depends_on:
       - receiver
 
   sensor_humidity:
-    <<: *rabbitmq-dependent
     container_name: sensor_humidity
     build:
       context: sensor
       dockerfile: Dockerfile
       args:
         SENSOR_TYPE: humidity
+    environment:
+      <<: *rabbitmq-env
     depends_on:
       - receiver
 
   receiver:
-    <<: *rabbitmq-dependent
     container_name: receiver
     build:
       context: receiver
       dockerfile: Dockerfile
-    volumes:
-      - ./receiver/db.sqlite3:/app/db.sqlite3
+    environment:
+      <<:
+        - *rabbitmq-env
+        - *postgres-env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  grapher:
+    container_name: grapher
+    build:
+      context: grapher
+      dockerfile: Dockerfile
+    environment:
+      <<: *postgres-env
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:4-management
     container_name: rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - 5672:5672
+      - 15672:15672
     environment:
       RABBITMQ_DEFAULT_USER: user
       RABBITMQ_DEFAULT_PASS: password
@@ -65,13 +88,30 @@ services:
       - rabbitmq-log:/var/log/rabbitmq
       - rabbitmq-conf:/etc/rabbitmq
     healthcheck:
-      test: "rabbitmqctl node_health_check"
+      test: rabbitmqctl node_health_check
       interval: 30s
       timeout: 30s
       retries: 3
       start_period: 5s
 
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U user
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 10s
+
 volumes:
   rabbitmq-data:
   rabbitmq-log:
   rabbitmq-conf:
+  postgres-data:

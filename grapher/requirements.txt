@@ -1,0 +1,2 @@
+matplotlib==3.9.2
+psycopg2==2.9.10
