@@ -1,1 +1,3 @@
 *.sqlite3
+grapher/graphs/*
+!grapher/graphs/.gitkeep
