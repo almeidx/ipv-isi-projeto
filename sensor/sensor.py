@@ -46,20 +46,13 @@ def generate_sensor_value(sensor_id: int, sensor_type: str):
             'sensor_type': sensor_type
         }
 
-        credentials = pika.PlainCredentials(
-            os.getenv('RABBITMQ_USER'), os.getenv('RABBITMQ_PASS')
-        )
+        credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USER'), os.getenv('RABBITMQ_PASS'))
         connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host=os.getenv('RABBITMQ_HOST'),
-                credentials=credentials
-            )
+            pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST'), credentials=credentials)
         )
         channel = connection.channel()
         channel.queue_declare(queue=QUEUE_NAME)
-        channel.basic_publish(
-            exchange='', routing_key=QUEUE_NAME, body=json.dumps(sensor_data)
-        )
+        channel.basic_publish(exchange='', routing_key=QUEUE_NAME, body=json.dumps(sensor_data))
 
         print(f"Sent sensor data: {sensor_data}")
         connection.close()
@@ -72,8 +65,7 @@ def main():
     sensor_type = os.getenv('SENSOR_TYPE')
 
     if sensor_type not in ['temperature', 'gas', 'humidity']:
-        raise ValueError(
-            'Invalid sensor type. Must be one of: temperature, gas humidity')
+        raise ValueError('Invalid sensor type. Must be one of: temperature, gas humidity')
 
     generate_sensor_value(sensor_id, sensor_type)
 

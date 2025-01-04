@@ -4,8 +4,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import plotly.express as px
+import plotly.graph_objs as go
 
-# Configuração do banco de dados
 DB_PARAMS = {
     'host': os.getenv('POSTGRES_HOST', 'localhost'),
     'database': os.getenv('POSTGRES_DB'),
@@ -20,169 +21,220 @@ UNIT_MAPPING = {
     "gas": "ppm"
 }
 
-# Limite para notificações
-VALUE_THRESHOLD = 50  # Limite arbitrário para acionar uma notificação
+VALUE_THRESHOLDS = {
+    "temperature": 30,
+    "humidity": 70,
+    "gas": 100
+}
 
 
 def fetch_sensor_data():
     try:
         conn = psycopg2.connect(**DB_PARAMS)
         with conn.cursor() as cursor:
-            cursor.execute(f'SELECT DISTINCT sensor_type FROM {TABLE_NAME}')
-            sensor_types = [sensor[0] for sensor in cursor.fetchall()]
-            return sensor_types, conn
+            cursor.execute(f'SELECT DISTINCT sensor_type, sensor_id FROM {TABLE_NAME}')
+            results = cursor.fetchall()
+
+            sensor_types = sorted(set(result[0] for result in results))
+            sensor_ids = {
+                sensor_type: sorted(
+                    set(result[1] for result in results if result[0] == sensor_type)
+                ) for sensor_type in sensor_types
+            }
+
+            return sensor_types, sensor_ids, conn
     except psycopg2.Error as e:
         st.error(f"Database error: {e}")
-        return [], None
+        return [], {}, None
 
 
-def plot_moving_average(df, selected_sensor):
-    unit = UNIT_MAPPING.get(selected_sensor, "")
-    df['moving_average'] = df['value'].rolling(window=5).mean()
-    st.subheader('Moving Average')
-    st.line_chart(df.set_index('timestamp')[['value', 'moving_average']])
+def load_data(selected_sensor_type, selected_sensor_ids, timeframe, conn):
+    if not selected_sensor_ids:
+        st.warning("No sensor IDs selected")
+        return None
 
-    st.write(f"Eixo Y: Valores de {unit}")
-
-
-def plot_distribution(df, selected_sensor):
-    unit = UNIT_MAPPING.get(selected_sensor, "")
-    st.subheader('Grouped Value Distribution')
-
-    # Agrupar os valores em intervalos de 0.25
-    bin_edges = np.arange(df['value'].min(), df['value'].max() + 0.25, 0.25)
-    df['binned_value'] = pd.cut(df['value'], bins=bin_edges)
-
-    # Extrair os limites inferiores dos intervalos e contar as ocorrências
-    binned_counts = df['binned_value'].value_counts().sort_index()
-
-    # Converter os intervalos para valores numéricos (limite inferior de cada intervalo)
-    binned_counts.index = binned_counts.index.astype(
-        str)  # Convertendo para string para exibição
-
-    # Exibir gráfico de barras
-    st.bar_chart(binned_counts)
-
-    st.write(f"Eixo Y: Contagem dos valores")
-    st.write(f"Eixo X: Intervalos de valores ({unit})")
-
-
-def plot_histogram(df, selected_sensor):
-    unit = UNIT_MAPPING.get(selected_sensor, "")
-    st.subheader('Histogram of Values')
-
-    hist_df = df['value'].value_counts().reset_index()
-    hist_df.columns = ['value', 'count']
-
-    st.bar_chart(hist_df.set_index('value'))
-
-    st.write(f"Eixo Y: Contagem dos valores")
-    st.write(f"Eixo X: Valores ({unit})")
-
-
-def load_data(selected_sensor, timeframe, conn):
     with conn.cursor() as cursor:
-        # Calcular o tempo de início com base no intervalo selecionado
         start_time = datetime.now() - pd.Timedelta(hours=timeframe)
 
-        cursor.execute(f'''
-            SELECT timestamp, value
+        query = f'''
+            SELECT timestamp, value, sensor_id
             FROM {TABLE_NAME}
-            WHERE sensor_type = %s AND timestamp > %s
+            WHERE sensor_type = %s AND sensor_id IN %s AND timestamp > %s
             ORDER BY timestamp
-        ''', (selected_sensor, start_time))
+        '''
+
+        cursor.execute(query, (selected_sensor_type, tuple(selected_sensor_ids), start_time))
 
         data = cursor.fetchall()
 
         if data:
-            # Converter os dados para DataFrame para Streamlit
-            df = pd.DataFrame(data, columns=['timestamp', 'value'])
+            df = pd.DataFrame(data, columns=['timestamp', 'value', 'sensor_id'])
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             return df
         else:
-            st.warning(f"No data for sensor type: {selected_sensor}")
+            st.warning(f"No data for sensor type: {selected_sensor_type}")
             return None
+
+
+def plot_multi_sensor_line(df, selected_sensor_type):
+    """
+    Create an interactive Plotly line chart for multiple sensors
+    """
+    if df is None or df.empty:
+        st.warning("No data to plot")
+        return
+
+    unit = UNIT_MAPPING.get(selected_sensor_type, "")
+
+    fig = px.line(df, x='timestamp', y='value', color='sensor_id',
+                  title=f'{selected_sensor_type.capitalize()} Sensor Data',
+                  labels={'value': f'Value ({unit})', 'timestamp': 'Timestamp'})
+
+    fig.update_layout(xaxis_title='Timestamp', yaxis_title=f'Value ({unit})', legend_title='Sensor ID')
+
+    st.plotly_chart(fig)
+
+
+def plot_moving_average(df, selected_sensor_type):
+    unit = UNIT_MAPPING.get(selected_sensor_type, "")
+
+    df_ma = df.groupby('sensor_id').apply(
+        lambda x: x.assign(moving_average=x['value'].rolling(window=5).mean())
+    ).reset_index(drop=True)
+
+    fig = go.Figure()
+
+    for sensor_id in df['sensor_id'].unique():
+        sensor_data = df_ma[df_ma['sensor_id'] == sensor_id]
+
+        fig.add_trace(go.Scatter(
+            x=sensor_data['timestamp'],
+            y=sensor_data['value'],
+            mode='lines',
+            name=f'Sensor {sensor_id} - Raw'
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=sensor_data['timestamp'],
+            y=sensor_data['moving_average'],
+            mode='lines',
+            name=f'Sensor {sensor_id} - Moving Avg',
+            line=dict(dash='dot')
+        ))
+
+    fig.update_layout(
+        title='Moving Average',
+        xaxis_title='Timestamp',
+        yaxis_title=f'Value ({unit})',
+        legend_title='Sensor Data'
+    )
+
+    st.plotly_chart(fig)
+
+
+def plot_distribution(df, selected_sensor_type):
+    unit = UNIT_MAPPING.get(selected_sensor_type, "")
+    st.subheader('Grouped Value Distribution')
+
+    distribution_data = []
+    for sensor_id in df['sensor_id'].unique():
+        sensor_df = df[df['sensor_id'] == sensor_id]
+
+        bin_edges = np.arange(sensor_df['value'].min(), sensor_df['value'].max() + 0.25, 0.25)
+        sensor_df['binned_value'] = pd.cut(sensor_df['value'], bins=bin_edges)
+
+        binned_counts = sensor_df['binned_value'].value_counts().sort_index()
+        binned_counts.index = binned_counts.index.astype(str)
+
+        for bin_range, count in binned_counts.items():
+            distribution_data.append({
+                'Sensor ID': sensor_id,
+                'Bin': bin_range,
+                'Count': count
+            })
+
+    dist_df = pd.DataFrame(distribution_data)
+    fig = px.bar(dist_df, x='Bin', y='Count', color='Sensor ID', title='Value Distribution by Sensor')
+
+    fig.update_layout(
+        xaxis_title=f'Value Intervals ({unit})',
+        yaxis_title='Count',
+        legend_title='Sensor ID'
+    )
+
+    st.plotly_chart(fig)
 
 
 def main():
     st.title("Sensor Data Graph Viewer")
 
-    # Barra lateral de navegação
-    sidebar = st.sidebar.radio(
-        "Escolha a Aba",
-        ["Gráficos", "Notificações"]
-    )
+    sidebar = st.sidebar.radio("Escolha a Aba", ["Gráficos", "Notificações"])
 
-    # Aba de Gráficos
     if sidebar == "Gráficos":
-        # Buscar tipos de sensores do banco de dados
-        sensor_types, conn = fetch_sensor_data()
+        sensor_types, sensor_ids, conn = fetch_sensor_data()
 
         if not sensor_types:
-            st.warning(
-                "No sensor data available or unable to connect to the database.")
+            st.warning("No sensor data available or unable to connect to the database.")
             return
 
-        # Barra lateral: cada tipo de sensor como um item da barra lateral
-        selected_sensor = st.sidebar.radio("Select Sensor Type", sensor_types)
+        selected_sensor = st.sidebar.selectbox("Select Sensor Type", sensor_types)
 
-        # Intervalo de tempo padrão em horas (exemplo: 6 horas)
+        available_sensor_ids = sensor_ids.get(selected_sensor, [])
+        selected_sensor_ids = st.sidebar.multiselect(
+            f"Select {selected_sensor} Sensor IDs",
+            available_sensor_ids,
+            default=available_sensor_ids
+        )
+
         default_timeframe = 6
-
-        # Barra lateral: slider para selecionar o intervalo de tempo, em horas
         timeframe = st.sidebar.slider(
             "Select Timeframe (hours)",
             min_value=1,
             max_value=48,
-            value=default_timeframe,  # Definir o intervalo de tempo padrão como 6 horas
+            value=default_timeframe,
             step=1,
             format="%d hours"
         )
 
-        # Exibir o intervalo de tempo selecionado
         st.sidebar.write(f"Showing data for the last {timeframe} hours.")
 
-        # Carregar e exibir os dados automaticamente quando o usuário alterar o tipo de sensor ou o intervalo de tempo
         if conn:
-            df = load_data(selected_sensor, timeframe, conn)
+            df = load_data(selected_sensor, selected_sensor_ids, timeframe, conn)
 
             if df is not None:
-                # Gráficos adicionais
+                plot_multi_sensor_line(df, selected_sensor)
                 plot_moving_average(df, selected_sensor)
                 plot_distribution(df, selected_sensor)
-                # plot_histogram(df)
 
             conn.close()
 
-    # Aba de Notificações
     elif sidebar == "Notificações":
-        # Procurar dados que ultrapassem o valor limite
         st.subheader("Notificações de Limite de Sensor")
 
-        sensor_types, conn = fetch_sensor_data()
+        sensor_types, sensor_ids, conn = fetch_sensor_data()
 
         if not sensor_types:
-            st.warning(
-                "No sensor data available or unable to connect to the database.")
+            st.warning("No sensor data available or unable to connect to the database.")
             return
 
-        # Escolher o tipo de sensor
-        selected_sensor = st.selectbox(
-            "Selecione o tipo de sensor", sensor_types)
+        selected_sensor = st.selectbox("Selecione o tipo de sensor", sensor_types)
 
-        # Carregar dados
+        available_sensor_ids = sensor_ids.get(selected_sensor, [])
+        selected_sensor_ids = st.multiselect(
+            f"Select {selected_sensor} Sensor IDs",
+            available_sensor_ids,
+            default=available_sensor_ids
+        )
+
         if conn:
-            df = load_data(selected_sensor, timeframe=6, conn=conn)
+            df = load_data(selected_sensor, selected_sensor_ids, timeframe=6, conn=conn)
 
             if df is not None:
-                # Verificar se algum valor ultrapassa o limite
-                exceeding_values = df[df['value'] > VALUE_THRESHOLD]
+                threshold = VALUE_THRESHOLDS.get(selected_sensor, float('inf'))
+                exceeding_values = df[df['value'] > threshold]
 
                 if not exceeding_values.empty:
-                    st.write(
-                        f"**Notificação**: O sensor {selected_sensor} tem valores acima do limite!")
-                    st.write(f"Valores que ultrapassaram o limite de {
-                             VALUE_THRESHOLD}:")
+                    st.write(f"**Notificação**: Valores acima do limite de {threshold}!")
                     st.dataframe(exceeding_values)
                 else:
                     st.write("Nenhum valor ultrapassou o limite.")

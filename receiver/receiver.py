@@ -59,8 +59,7 @@ def callback(ch, method, _properties, body):
                 ''', (timestamp, sensor_id, sensor_type, value))
                 conn.commit()
 
-        print(f"[{timestamp}] Recorded data from sensor {
-              sensor_id} ({sensor_type}): {value}")
+        print(f"[{timestamp}] Recorded data from sensor {sensor_id} ({sensor_type}): {value}")
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except json.JSONDecodeError as e:
@@ -74,25 +73,16 @@ def callback(ch, method, _properties, body):
 def main():
     init_db()
 
-    credentials = pika.PlainCredentials(
-        os.getenv('RABBITMQ_USER'),
-        os.getenv('RABBITMQ_PASS')
-    )
+    credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USER'), os.getenv('RABBITMQ_PASS'))
 
     connection = pika.BlockingConnection(
-        pika.ConnectionParameters(
-            host=os.getenv('RABBITMQ_HOST'),
-            credentials=credentials
-        )
+        pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST'), credentials=credentials)
     )
 
     channel = connection.channel()
     channel.queue_declare(queue=QUEUE_NAME)
 
-    channel.basic_consume(
-        queue=QUEUE_NAME,
-        on_message_callback=callback
-    )
+    channel.basic_consume(queue=QUEUE_NAME, on_message_callback=callback)
 
     print(f"Starting consumer. Saving data to PostgreSQL")
 

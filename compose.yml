@@ -115,13 +115,11 @@ services:
         condition: service_healthy
     ports:
       - 8501:8501
-    volumes:
-      - ./grapher/graphs:/app/graphs
     deploy:
       resources:
         limits:
           cpus: '0.1'
-          memory: 100M
+          memory: 500M
 
   rabbitmq:
     image: rabbitmq:4-management

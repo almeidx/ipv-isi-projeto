@@ -1,4 +1,4 @@
-FROM python AS deps
+FROM python:3.13
 
 ARG SENSOR_TYPE
 ARG SENSOR_ID
