@@ -17,13 +17,13 @@ TABLE_NAME = 'sensor_data'
 
 UNIT_MAPPING = {
     "temperature": "°C",
-    "humidity": "%",
+    "smoke": "V",
     "gas": "ppm"
 }
 
 VALUE_THRESHOLDS = {
     "temperature": 30,
-    "humidity": 70,
+    "smoke": 5,
     "gas": 100
 }
 
@@ -231,10 +231,11 @@ def main():
 
             if df is not None:
                 threshold = VALUE_THRESHOLDS.get(selected_sensor, float('inf'))
-                exceeding_values = df[df['value'] > threshold]
+                direction = 'acima' if selected_sensor != 'smoke' else 'abaixo'
+                exceeding_values = df[df['value'] > threshold if direction == 'acima' else df['value'] < threshold]
 
                 if not exceeding_values.empty:
-                    st.write(f"**Notificação**: Valores acima do limite de {threshold}!")
+                    st.write(f"**Notificação**: Valores {direction} do limite de {threshold}")
                     st.dataframe(exceeding_values)
                 else:
                     st.write("Nenhum valor ultrapassou o limite.")

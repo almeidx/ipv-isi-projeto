@@ -63,25 +63,25 @@ services:
         SENSOR_ID: 4
         SENSOR_TYPE: gas
 
-  sensor_humidity_1:
+  sensor_smoke_1:
     <<: *sensor
-    container_name: sensor_humidity_1
+    container_name: sensor_smoke_1
     build:
       context: sensor
       dockerfile: Dockerfile
       args:
         SENSOR_ID: 5
-        SENSOR_TYPE: humidity
+        SENSOR_TYPE: smoke
 
-  sensor_humidity_2:
+  sensor_smoke_2:
     <<: *sensor
-    container_name: sensor_humidity_2
+    container_name: sensor_smoke_2
     build:
       context: sensor
       dockerfile: Dockerfile
       args:
         SENSOR_ID: 6
-        SENSOR_TYPE: humidity
+        SENSOR_TYPE: smoke
 
   receiver:
     container_name: receiver

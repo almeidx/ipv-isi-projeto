@@ -28,13 +28,13 @@ def generate_sensor_value(sensor_id: int, sensor_type: str):
                 new_value = previous_value + trend_factor + noise_factor
 
             new_value = np.clip(new_value, 0, 1000)
-        elif sensor_type == 'humidity':
+        elif sensor_type == 'smoke':
             if previous_value is None:
-                new_value = 50
+                new_value = 4
             else:
                 new_value = previous_value + trend_factor + noise_factor
 
-            new_value = np.clip(new_value, 0, 100)
+            new_value = np.clip(new_value, 0, 5)
         else:
             raise ValueError(f"Invalid sensor type: {sensor_type}")
 
@@ -64,8 +64,8 @@ def main():
     sensor_id = int(os.getenv('SENSOR_ID'))
     sensor_type = os.getenv('SENSOR_TYPE')
 
-    if sensor_type not in ['temperature', 'gas', 'humidity']:
-        raise ValueError('Invalid sensor type. Must be one of: temperature, gas humidity')
+    if sensor_type not in ['temperature', 'gas', 'smoke']:
+        raise ValueError('Invalid sensor type. Must be one of: temperature, gas, or smoke')
 
     generate_sensor_value(sensor_id, sensor_type)
 
