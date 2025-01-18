@@ -77,9 +77,6 @@ def load_data(selected_sensor_type, selected_sensor_ids, timeframe, conn):
 
 
 def plot_multi_sensor_line(df, selected_sensor_type):
-    """
-    Create an interactive Plotly line chart for multiple sensors
-    """
     if df is None or df.empty:
         st.warning("No data to plot")
         return

@@ -74,7 +74,6 @@ def main():
     init_db()
 
     credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USER'), os.getenv('RABBITMQ_PASS'))
-
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST'), credentials=credentials)
     )
